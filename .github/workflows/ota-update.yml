@@ -1,4 +1,4 @@
-name: OTA Update to ESP32 via MQTT TLS
+name: OTA Update to ESP32 via MQTT TLS (GCP Storage)
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -26,7 +26,7 @@ jobs:
       - name: Set up PlatformIO
         run: pip install platformio
 
-      # ✅ Detectar versión desde tag o generar una versión dev
+      # ✅ 1. Detectar versión (Tag o Dev)
       - name: Set firmware version
         id: version
         run: |
@@ -38,48 +38,54 @@ jobs:
           fi
 
       - name: Set firmware filename
-        run: echo "FIRMWARE_NAME=firmware_${FIRMWARE_VERSION}.bin" >> $GITHUB_ENV
+        run: echo "FIRMWARE_NAME=firmware_${{ env.FIRMWARE_VERSION }}.bin" >> $GITHUB_ENV
 
+      # ✅ 2. Compilar el binario
       - name: Build firmware
         run: platformio run
 
-      - name: Upload to S3
-        run: |
-          aws s3 cp .pio/build/esp32dev/firmware.bin s3://${{ secrets.S3_BUCKET_NAME }}/$FIRMWARE_NAME \
-            --content-type application/octet-stream
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      # ✅ 3. Autenticar en Google Cloud
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      # ✅ 4. Subir el binario al Bucket de GCP
+      - name: Upload firmware to GCS
+        uses: google-github-actions/upload-cloud-storage@v1
+        with:
+          path: .pio/build/esp32dev/firmware.bin
+          destination: ${{ secrets.GCP_BUCKET_NAME }}/
+          parent: false
+          object_name: ${{ env.FIRMWARE_NAME }}
+          headers: |-
+            content-type: application/octet-stream
+
+      # ✅ 5. Publicar el anuncio OTA vía MQTT (TLS)
       - name: Publish MQTT OTA message
         run: |
           pip install paho-mqtt
           python3 -c "import os, json, paho.mqtt.publish as publish; \
-          url = 'https://{bucket}.s3.{region}.amazonaws.com/{firmware}'.format( \
-            bucket=os.getenv('S3_BUCKET_NAME'), \
-            region=os.getenv('AWS_REGION'), \
+          url = 'https://storage.googleapis.com/{bucket}/{firmware}'.format( \
+            bucket=os.getenv('GCP_BUCKET_NAME'), \
             firmware=os.getenv('FIRMWARE_NAME') \
           ); \
           payload = json.dumps({ 'version': os.getenv('FIRMWARE_VERSION'), 'url': url }); \
+          print(f'Enviando Payload: {payload}'); \
           publish.single( \
             topic=os.getenv('DEVICE_TOPIC'), \
             payload=payload, \
             hostname=os.getenv('MQTT_SERVER'), \
             port=int(os.getenv('MQTT_PORT')), \
             auth={ 'username': os.getenv('MQTT_USER'), 'password': os.getenv('MQTT_PASSWORD') } if os.getenv('MQTT_USER') else None, \
-            tls={} if os.getenv('MQTT_TLS', 'false') == 'true' else None \
+            tls={} if os.getenv('MQTT_TLS', 'true') == 'true' else None \
           ); \
-          print('✅ Mensaje OTA enviado')"
-
+          print('✅ Mensaje OTA enviado exitosamente')"
         env:
-          DEVICE_TOPIC: dispositivo/device1/ota
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+          DEVICE_TOPIC: "dispositivo/device1/ota"
+          GCP_BUCKET_NAME: ${{ secrets.GCP_BUCKET_NAME }}
           MQTT_SERVER: ${{ secrets.MQTT_SERVER }}
           MQTT_PORT: ${{ secrets.MQTT_PORT }}
           MQTT_USER: ${{ secrets.MQTT_USER }}
           MQTT_PASSWORD: ${{ secrets.MQTT_PASSWORD }}
-          MQTT_TLS: ${{ secrets.MQTT_TLS }}
+          MQTT_TLS: "true" # Forzamos TLS ya que tu EMQX lo tiene activo
