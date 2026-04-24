@@ -43,7 +43,7 @@
 #define PRINT(x)
 #endif
 
-SHTSensor sht;     //Sensor SHT21
+SHTSensor sht;                       //Sensor SHT3X (autodetect)
 String alert = ""; //Mensaje de alerta
 extern const char * client_id;  //ID del cliente MQTT
 
@@ -179,7 +179,7 @@ void reconnect() {
  * Función setupIoT que configura el certificado raíz, el servidor MQTT y el puerto
  */
 void setupIoT() {
-  Wire.begin();                 //Inicializa el bus I2C: (SDA, SCL)
+  Wire.begin();                 //Inicializa el bus I2C con pines por defecto del board
   espClient.setCACert(root_ca); //Configura el certificado raíz de la autoridad de certificación
   client.setServer(mqtt_server, mqtt_port);   //Configura el servidor MQTT y el puerto seguro
   
@@ -209,9 +209,24 @@ void setupIoT() {
  * Configura el sensor SHT21
  */
 void setupSHT() {
-  if (sht.init()) Serial.print("SHT init(): Exitoso\n");
-  else Serial.print("SHT init(): Fallido\n");
-  sht.setAccuracy(SHTSensor::SHT_ACCURACY_MEDIUM); // soportado solo por el SHT3x
+  Serial.println("=== Inicializando SHT3X ===");
+  if (sht.init()) {
+    Serial.println("SHT init(): Exitoso");
+  } else {
+    Serial.println("SHT init(): Fallido");
+  }
+  sht.setAccuracy(SHTSensor::SHT_ACCURACY_MEDIUM);
+  // Espera a que el sensor se estabilice tras el init
+  delay(1000);
+  if (sht.readSample()) {
+    Serial.print("Test lectura OK - Temp: ");
+    Serial.print(sht.getTemperature());
+    Serial.print(" C, Hum: ");
+    Serial.println(sht.getHumidity());
+  } else {
+    Serial.println("Test lectura FALLIDO - revisa conexión SDA/SCL");
+  }
+  Serial.println("===========================");
 }
 
 
@@ -222,8 +237,14 @@ void setupSHT() {
 bool measure(SensorData * data) {
   if ((millis() - measureTime) >= MEASURE_INTERVAL * 1000 ) {
     PRINTLN("\nMidiendo variables...");
-    measureTime = millis();    
-    if (sht.readSample()) {
+    measureTime = millis();
+    // Reintento con delay para SHT3X (clock stretching)
+    bool ok = false;
+    for (int i = 0; i < 3 && !ok; i++) {
+      delay(100);
+      ok = sht.readSample();
+    }
+    if (ok) {
         data->temperature = sht.getTemperature();
         data->humidity = sht.getHumidity();
         PRINT(" %RH ❖ Temperatura: ");

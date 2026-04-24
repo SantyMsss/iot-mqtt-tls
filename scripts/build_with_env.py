@@ -29,8 +29,17 @@ if env_file.exists():
                 # Exportar al entorno
                 os.environ[key] = value
 
+# Detectar ejecutable de PlatformIO (compatible con Windows y Unix)
+pio_candidates = [
+    os.path.join(os.path.expanduser('~'), '.platformio', 'penv', 'Scripts', 'platformio.exe'),  # Windows
+    os.path.join(os.path.expanduser('~'), '.platformio', 'penv', 'bin', 'platformio'),           # Linux/Mac
+    'platformio',  # fallback si está en PATH
+    'pio',
+]
+pio_cmd = next((c for c in pio_candidates if os.path.isfile(c)), 'platformio')
+
 # Ejecutar pio
 if len(sys.argv) > 1 and sys.argv[1] == 'upload':
-    subprocess.run(['pio', 'run', '-t', 'upload'], check=True)
+    subprocess.run([pio_cmd, 'run', '-t', 'upload'], check=True)
 else:
-    subprocess.run(['pio', 'run'], check=True)
+    subprocess.run([pio_cmd, 'run'], check=True)

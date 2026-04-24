@@ -50,7 +50,7 @@ extern time_t now;                  ///< Timestamp de la fecha actual.
 extern long long int measureTime;   ///< Tiempo de la última medición
 extern long long int alertTime;     ///< Tiempo en que inició la última alerta
 extern String alert;                ///< Mensaje para mostrar en la pantalla
-extern SHTSensor sht;               ///< Sensor SHT21
+extern SHTSensor sht;               ///< Sensor SHT3X
 
 typedef struct {
   float temperature;
