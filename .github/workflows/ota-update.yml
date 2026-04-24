@@ -59,15 +59,16 @@ jobs:
         uses: google-github-actions/auth@v1
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
 
       # ✅ 4. Subir el binario al Bucket de GCP
       - name: Upload firmware to GCS
         uses: google-github-actions/upload-cloud-storage@v1
         with:
           path: .pio/build/esp32dev/firmware.bin
-          destination: ${{ secrets.GCP_BUCKET_NAME }}/
+          destination: ${{ secrets.GCP_BUCKET_NAME }}/${{ env.FIRMWARE_NAME }}
           parent: false
-          object_name: ${{ env.FIRMWARE_NAME }}
+          process_gcloudignore: false
           headers: |-
             content-type: application/octet-stream
 
